@@ -48,7 +48,7 @@ Then the value of the collision to us is:
 OUR_VALUE_AFTER - OUR_VALUE_BEFORE - (THEIR_VALUE_AFTER - THEIR_VALUE_BEFORE)/(NUM_PLAYERS-1) =
 p(h+e) - h - s - ((1-p)(h+e) - e - s)/(n-1)
 
-This equation tells us whether the collision is good. In fact, it gives us a threshold h at which we want to have a collision. We average these thresholds over nearby squares when planning in the future, because we expect ships to move around a bit before we get there.
+This value tells us whether the collision is good. In fact, it gives us a threshold h at which we want to have a collision, which is when the expression equals 0. We average these thresholds over nearby squares when planning in the future, because we expect ships to move around a bit before we get there.
 
 These thresholds now tell us whether each ship can safely visit a particular square at a particular time. In two player games, we avoid all squares which can't be safely visited, both immediately and when planning paths for mining. In four player games, we only avoid them if we also think the opponent might visit them. For this, we track what kind of collisions each opponent is willing to risk, in order to judge whether or not they are likely to move to a spot which might cause a collision.
 
@@ -58,7 +58,11 @@ Ships claim their favourite targets (that is, the ones with the minimum score fo
 They then move towards their targets. They prefer to move along the longer axis of the path, to keep as many possible paths open as they can.
 
 ### Dropoff plan
+We plan the next dropoff location, for use in mining scores. This often has the effect of ships appearing to "swarm" towards a dropoff when it gets planned.
+
 #### Using a dropoff plan
+When calculating their mining scores, ships treat the planned dropoff as real. When returning to bank their halite, they treat it as real if they expect there to be enough halite in the bank to build it when they arrive. They then build it on arrival.
+
 #### Where and when
 
 ### Returning to base
