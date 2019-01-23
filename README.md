@@ -44,7 +44,9 @@ First, we define a desirable collision. A player's ownership of a square is how 
 * There are n players in the game
 
 Then the value of the collision to us is:
-OUR_VALUE_AFTER - OUR_VALUE_BEFORE - (THEIR_VALUE_AFTER - THEIR_VALUE_BEFORE)/(NUM_PLAYERS-1) = p(h+e) - h - s - ((1-p)(h+e) - e - s)/(n-1)
+
+OUR_VALUE_AFTER - OUR_VALUE_BEFORE - (THEIR_VALUE_AFTER - THEIR_VALUE_BEFORE)/(NUM_PLAYERS-1) =
+p(h+e) - h - s - ((1-p)(h+e) - e - s)/(n-1)
 
 This equation tells us whether the collision is good. In fact, it gives us a threshold h at which we want to have a collision. We average these thresholds over nearby squares when planning in the future, because we expect ships to move around a bit before we get there.
 
