@@ -3,6 +3,8 @@ A bot for Halite 3.
 
 This README is a work in progress.
 
+Disclaimer: this code was written for a competition, where the incentives are very different from most other contexts. It should not be taken as an example of good code.
+
 ## Algorithm
 This will not be a complete description of the algorithm, but will have a summary of the important things (insofar as I know what they are). "x" and "y" are used to mean "a parameter", which may be different between map sizes and number of players in the game. I'll indicate some features which are peripheral and don't make much impact on the overall strength as (minor).
 
@@ -64,6 +66,16 @@ We plan the next dropoff location, for use in mining scores. This often has the 
 When calculating their mining scores, ships treat the planned dropoff as real. When returning to bank their halite, they treat it as real if they expect there to be enough halite in the bank to build it when they arrive. They then build it on arrival.
 
 #### Where and when
+The dropoff logic in this bot is a bit of a mess - I never found a good way of modelling dropoffs. We consider building a dropoff on a square if a number of conditions hold:
+* The number of ships is at least x * (CURRENT_DROPOFFS + 1)
+* There are no other dropoffs within x of the square.
+* There is at least 1 ship within x of the square, and a further y within z.
+
+If all those are satisfied, we score the square. The score is the amount of halite nearby (with near halite counting more), plus modifiers for how well we control the area, and how far it is from the nearest dropoff. We then divide that by the cost of a dropoff minus the amount of halite on the square, to get the final score.
+
+We model the gains from a dropoff as saving turns for ships. If there is h halite nearby, we expect to save a * h ship-turns over b turns (where a and b are constants we won't actually estimate). For this to be worth it, two things need to hold:
+* It is better to build a dropoff than spawn. If we spawn 4 ships instead of building, in the same b turn span we'll get 4b ship turns. This means that a * h > 4b, or h > x for some parameter x.
+* The dropoff will pay itself back. This means that a * h * SHIP_TURN_VALUE > DROPOFF_COST, or h > x * (DROPOFF_COST / SHIP_TURN_VALUE). For this condition, we need to estimate SHIP_TURN_VALUE - we do this using imaginary ships which mine from each dropoff, using the same algorithm we use for mining for scoring.
 
 ### Returning to base
 #### When to return
