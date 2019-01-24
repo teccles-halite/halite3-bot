@@ -24,7 +24,7 @@ This will not be a complete description of the algorithm, but will have a summar
 #### Basic algorithm
 The model used for this algorithm is: a ship will move to a square X, and mine it for a while. It will then continue to move-and-mine with the same gathering efficiency until full. It will then return to a dropoff, from a point exactly as far away as square X. It should pick the square X to minimise the number of turns this whole process takes.
 
-Every ship calculates the number of turns and halite burned it will take to get to every square on the map, using a breadth first search. At every square, it chooses a number of turns to mine which maximise its halite gain per turn over travel and mining. The score of the square is then:
+Every ship calculates the number of turns and halite burned it will take to get to every square on the map, using [Dijkstra's algorithm](https://en.wikipedia.org/wiki/Dijkstra%27s_algorithm) with a cost of number of turns. At every square, it chooses a number of turns to mine which maximise its halite gain per turn over travel and mining. The score of the square is then:
 
 x * RETURN_TIME + (TRAVEL_TIME + MINING_TIME) * (MAX_HALITE - SHIP_HALITE)/(HALITE_MINED - HALITE_BURNED)
 
@@ -90,8 +90,8 @@ h > x * (DROPOFF_COST / SHIP_TURN_VALUE). For this condition, we need to estimat
 ### Returning to base
 #### When to return
 When ships start to return towards a dropoff or a shipyard, they carry on until they get there. They start to return when either of the following happens:
-1. They get over x halite (this is the usual reason ships return)
-2. The best score they get for any square is too high - if the expected time to fill up and return is S, and they have h halite, the ship returns if:
+1. They get over x halite.
+2. (minor) The best score they get for any square is too high - if the expected time to fill up and return is S, and they have h halite, the ship returns if:
 h > x * S * DISTANCE_TO_DROPOFF
 
 #### How to return
@@ -118,15 +118,20 @@ Having a good development workflow is very important. I used Intellij for an IDE
 
 Possibly the key skill in this game was analysing replays to understand how to improve your bot. For this, I used many strategies, including:
 * Viewing replays in the exceptional [Fluorine replay viewer](https://github.com/fohristiwhirl/fluorine). I'd typically watch losses, with strategies including these:
-** Watching a whole replay for macro level problems.
-** Scrolling through collisions looking for bad ones.
-** Watching a single turtle for their whole life, to spot weirdnesses and understand how the algorithm played out.
-** I used f-logs to highlight the mining targets of turtles, making their movement much more interpretable.
+    * Watching a whole replay for macro level problems.
+    * Scrolling through collisions looking for bad ones.
+    * Watching a single turtle for their whole life, to spot weirdnesses and understand how the algorithm played out.
+    * I used f-logs to highlight the mining targets of turtles, making their movement much more interpretable.
 * Understanding any mistakes or oddities I found - by logging locally, or by running them through [Fohristi's reloader](https://github.com/fohristiwhirl/halite3_reload) for online games.
 * Looking at the breakdown of 2p, 4p, matchup sizes and opponents on [mlomb's statistics site](https://halite2018.mlomb.me). This also had very useful statistics like inspiration, dropoffs, etc.
 * Collecting similar statistics for my local games, to measure the impact of changes.
 
 I started off in Python, when I didn't expect to spend that much time on this game (I did, in fact, end up spending that much time on the game). A few weeks in, I rewrote in Java. That was definitely a good choice - I needed the performance, and even more important it made my local games faster. Also, rewriting the same algorithm from scratch made it much easier to structure it well the second time round.
+
+I ended up with quite a lot of parameters. These were optimised in a number of ways:
+* Picking a number out of the air and never changing it.
+* Trying a few values locally or online.
+* [CLOP](https://www.remi-coulom.fr/CLOP/). I got very mixed results for this - some sets of parameters found did very well, and some didn't. I don't have a clear pattern for what kind of parameters it was good at optimising.
 
 ## Regrets
 There are a few things I would do differently next time. A couple stand out:
