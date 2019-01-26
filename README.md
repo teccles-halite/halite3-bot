@@ -1,10 +1,12 @@
 # halite3-bot
-A bot for Halite 3.
 
-Disclaimer: this code was written for a competition, where the incentives are very different from most other contexts. It should not be taken as an example of good code.
+## Introduction
+This is a bot written for the [Halite 3](https://halite.io/) competition, and in fact it won it. If you didn't participate, you'll probably want to read [the rules](https://halite.io/learn-programming-challenge/game-overview) for this to make any sense at all.
 
-## Thanks!
 Many thanks to Two Sigma and janzert for hosting such a great competition, and organising it brilliantly. Thanks also to fohristiwhirl and mlomb for creating great tools for players to analyse the game.
+
+## Quality disclaimer
+This code was written for a competition, where the incentives are very different from most other contexts. It should not be taken as an example of good code outside of a programming competition.
 
 ## Algorithm
 This will not be a complete description of the algorithm, but will have a summary of the important things (insofar as I know what they are). "x" and "y" are used to mean "a parameter", which may be different between map sizes and number of players in the game. I'll indicate some features which are peripheral and don't make much impact on the overall strength as (minor).
@@ -112,6 +114,9 @@ Here, NUM_SHIPS is for all players. The model is that we will mine down to propo
 In 2 player, I mostly opted out of the spawning game. We always spawn if we have fewer ships than the opponent, and never if we have >5 more. In between, we use the 4 player spawning algorithm.
 
 The logic is that if you are winning other parts of the game, spawning adds some variance - before implementing this system, I was winning and losing some games because of spawning decisions, and eliminating that helped my winrate overall.
+
+### Gory details
+The above describes a good bot, and I think has the most interesting and important bits, but there are a lot of small things that are in aggregate were also crucial to the bot's strength. If you want to read the code, it's hopefully pretty well commented.
 
 ## Workflow etc
 Having a good development workflow is very important. I used Intellij for an IDE and Git for source control. I initially ran games on my laptop, but it is rather slow, so I ended up using (free trial) cloud computing to run games. When testing bots, I usually ran them against the previous version (in 2p) and 2 copies against 2 of the previous version (in 4p). Occasionally in 4p, I used particularly aggressive or passive versions by changing constants, when testing out collision strategies in particular.
