@@ -34,7 +34,8 @@ public class MoveRegister {
         allShips = new ArrayList<>(ships);
         this.game = game;
         if(!rushOn) {
-            // Ships on dropoffs must move this turn.
+            // Ships on dropoffs must move this turn. We track what moves they can still make, so that they can take
+            // the last available move if the others get taken.
             for (Position p : CommonFunctions.getDropoffPositions(game.me, Optional.<DropoffPlan>empty())) {
                 if (game.map.at(p).hasShip() && game.map.at(p).ship.owner.equals(game.me.id)) {
                     List<Direction> legalMoves = new ArrayList<>();
@@ -48,8 +49,12 @@ public class MoveRegister {
     }
 
     public void startTrackingLegalMoves() {
+        // After this, we will move all ships whenever they have exactly one square they are happy with.
         for (Ship s : getRemainingShips()) {
+            // mustMoveShips are dealt with differently - they will definitely move, and don't need to be tracked here.
             if(mustMoveShips.containsKey(s.position)) continue;
+            // We only worry about ships which aren't happy to stay put. Actually, this is probably wrong - if a ship's
+            // square gets taken, it should be tracked like this.
             if(!MapStatsKeeper.canVisit(game, s.position, s)) {
                 Logger.info(String.format("Ship %s needs to move if possible", s));
                 List<Direction> legalMoves = new ArrayList<>();
@@ -84,6 +89,8 @@ public class MoveRegister {
     }
 
     public void registerMove(Ship ship, Direction direction) {
+        // Makes the ship move in the direction; checks for collisions, updates the taken positions maps, and makes any
+        // forced moves that result from this move.
         if(!remainingShips.contains(ship)) {
             // This can happen when a ship on a dropoff gets a forced move before it makes its own decision.
             if(!forcedMoves.contains(ship)) throw new IllegalArgumentException("Attempted to issue duplicate" +
@@ -105,6 +112,7 @@ public class MoveRegister {
         remainingShips.remove(ship);
         commandRegister.add(command);
 
+        // Check ships that must move in case they now need to move.
         List<Position> checkPos = new ArrayList<>(mustMoveShips.keySet());
         for(Position p : checkPos) {
             if(game.map.calculateDistance(p, command.destination) == 1) {
@@ -118,6 +126,7 @@ public class MoveRegister {
             }
         }
 
+        // Check ships which should move in case they now need to move.
         List<Ship> checkShips = shouldMoveShipAttentionMaps.get(command.destination);
         if(checkShips != null) {
             for (Ship s : checkShips) {
@@ -140,18 +149,20 @@ public class MoveRegister {
     }
 
     private void checkMustMovePosition(Position p) {
+        // Checks whether a ship which must move now needs to move.
         List<Direction> remainingMoves = mustMoveShips.get(p);
+        // Only need to move if there's one move left.
         if(remainingMoves.size() != 1) return;
-        Ship dropoffShip = game.map.at(p).ship;
-        if(remainingShips.contains(dropoffShip)) {
-            Logger.info("Ship on dropoff needs to move!");
+        Ship mustMoveShip = game.map.at(p).ship;
+        if(remainingShips.contains(mustMoveShip)) {
+            Logger.info(String.format("Ship %s needs to move!", mustMoveShip));
             Direction forcedDir = remainingMoves.get(0);
-            forcedMoves.add(dropoffShip);
-            registerMove(dropoffShip, forcedDir);
+            forcedMoves.add(mustMoveShip);
+            registerMove(mustMoveShip, forcedDir);
             Position dest = p.directionalOffset(forcedDir, game.map);
             mustMoveDests.add(dest);
 
-            // If there's a ship there, it must move!
+            // If there's a ship in the square we are moving to, it must also move.
             if(game.map.at(dest).hasShip() && game.map.at(dest).ship.owner.equals(game.me.id)) {
                 Ship s = game.map.at(dest).ship;
 
@@ -170,6 +181,8 @@ public class MoveRegister {
                     validDirections.add(d);
                 }
                 if(validDirections.isEmpty()) {
+                    // The ship we are moving onto has no options to move away. We cancel a random order to a square
+                    // next to it to make it move.
                     Logger.info("No valid direction for forced mover. Cancelling a random order!");
                     Direction bestDir = null;
                     for(Direction d : Direction.ALL_CARDINALS) {
@@ -178,6 +191,8 @@ public class MoveRegister {
                         bestDir = d;
                     }
                     if(bestDir == null){
+                        // This can probably never happen, but if all the squares around the ship are destinations of
+                        // forced moves, it stays still and causes a collision.
                         Logger.warn("The end times are here. Forced mover is surrounded by forced moves. " +
                                 "We will allow a collision to prevent gridlock.");
                         registerPossibleCollision(dest);
@@ -185,6 +200,8 @@ public class MoveRegister {
                     else {
                         Position newDest = dest.directionalOffset(bestDir, game.map);
                         Logger.info(String.format("Cancelling any order to move to %s!", newDest));
+                        // There's a bug here - we cancel the order, but we don't put the ship back into the pool of
+                        // ships.
                         commandRegister = commandRegister.stream().filter(
                                 c -> c.destination != newDest).collect(Collectors.toList());
                         validDirections.add(bestDir);
@@ -201,20 +218,24 @@ public class MoveRegister {
     }
 
     public void registerDropoff(Ship ship) {
+        // Ew, an assertion.
         assert remainingShips.contains(ship);
         ShipCommand command = ShipCommand.transformShipIntoDropoffSite(ship);
+        // This doesn't add the destination to occupiedPositions, because other ships are very welcome to move there.
         remainingShips.remove(ship);
         commandRegister.add(command);
     }
 
     private void fixCommands() {
-        // Add a STILL command for any ship without one. This is just to fix collisions.
+        // Add a STILL command for any ship without one. This is just to help in fixing collisions.
         Set<Ship> ships = commandRegister.stream().map(s->s.ship).collect(Collectors.toSet());
         for(Ship s : allShips){
             if(!ships.contains(s)) commandRegister.add(ShipCommand.move(game.map, s, Direction.STILL));
         }
 
         while(true) {
+            // We loop over the command register, cancelling orders which end up on the same square. This map happen
+            // several times.
             Logger.info("Looping to fix commands");
             Set<Position> positions = new HashSet<>();
             Set<Position> badPositions = new HashSet<>();
@@ -240,12 +261,14 @@ public class MoveRegister {
                     newCommands.add(c);
                 }
                 else {
+                    // Not sure whether this ever happens, but this ends up cancelling both orders if two ships are
+                    // planning to make the same move, which seems wrong.
                     Logger.warn(String.format("Removing command to move %s to %s", c.ship.position, c.destination));
                     badPositions.remove(c.destination);
                     Direction d = Direction.STILL;
                     if(occupiedPositions.contains(c.ship.position)) {
+                        // Make an effort to move off this square, because another ship wants it.
                         Logger.warn("Shouldn't stay still - another ship wants this position");
-
                         d = Navigation.moveAnywhere(game, c.ship, occupiedPositions, false, new RandomTiebreaker());
                     }
                     Logger.warn(String.format("Alternative direction %s", d));
@@ -276,6 +299,7 @@ public class MoveRegister {
     }
 
     public void registerPossibleCollision(Position position) {
+        // If a self-collision is registered on a position, we won't change the orders on the collision prevention pass.
         Logger.warn(String.format("Allowing collisions on %s this turn!", position));
         collisionsAllowed.add(position);
     }

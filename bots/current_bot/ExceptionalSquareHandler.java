@@ -21,12 +21,18 @@ final class FillState {
     }
 }
 
+/**
+ * This class handles moving several turtles towards a very high halite square, which we are fighting over with our opponent.
+ *
+ * It checks for squares which are a) high halite, b) disputed, and c) where we can win the fight.
+ */
 public class ExceptionalSquareHandler {
     public static void getExceptionalSquaresMoves(Game game, MoveRegister moveRegister, int haliteSum, Set<EntityId> returningShips) {
         double haliteThreshold = BotConstants.get().EXCEPTIONAL_SQUARE_PROPORTION() * haliteSum / (game.map.width*game.map.height);
         Logger.info(String.format("Halite threshold %f", haliteThreshold));
         for(int x=0; x < game.map.height; x++) {
             for(int y=0; y<game.map.width; y++) {
+                // Look for squares with high halite and a nearby enemy.
                 if(game.map.cells[x][y].halite > haliteThreshold && MapStatsKeeper.nearestEnemy(game, x, y) < BotConstants.get().EXCEPTIONAL_ENEMY_DISTANCE()) {
                     Logger.info(String.format("(%d, %d) is an exceptional square!", x, y));
                 }
@@ -42,6 +48,9 @@ public class ExceptionalSquareHandler {
                 List<Ship> theirShips = new LinkedList<>();
                 int turns = 0;
 
+                // We search outwards for ships, until we get to a situation when one player can get n ships to the square
+                // on turn t, and the other can't get n there even on turn t+1. In that situation, the first player wins
+                // the fight.
                 while(!won && !lost && !layer.isEmpty()) {
                     for(FillState state : layer) {
                         foundPositions.add(state.position);
@@ -81,8 +90,10 @@ public class ExceptionalSquareHandler {
                     }
                     turns++;
                 }
+
                 Logger.info(String.format("Our ships %d, their ships %d", ourShips.size(), theirShips.size()));
                 if(won) {
+                    // We can win this fight - we commit as many ships as we need to to do it.
                     Logger.info("We win.");
                     Set<Ship> remaining = moveRegister.getRemainingShips();
                     ourShips.sort((s_1, s_2) -> {

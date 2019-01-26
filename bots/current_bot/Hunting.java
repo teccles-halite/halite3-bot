@@ -14,9 +14,14 @@ import hlt.*;
 
 import java.util.*;
 
+/**
+ * Hunt enemy ships. There are large halite ships, who we can surround and kill in a few turns. Doing so takes a ship
+ * to block off their movement along each axis.
+ */
 public class Hunting {
 
     public static void getHuntingMoves(Game game, MoveRegister moveRegister, Set<EntityId> returningShips) {
+        // The cost of swapping a ship. This has a bug - it should be SpawnDecider.shipValue * (1.0 - 1.0/(game.players.size()-1))
         double shipSwapCost = SpawnDecider.shipValue * (1.0 - 1.0/(double)game.players.size());
         for(Player enemy : game.players) {
             if(enemy.equals(game.me)) continue;
@@ -25,6 +30,8 @@ public class Hunting {
                 int maxRadius = Math.min(BotConstants.get().MAX_HUNTING_RADIUS(),
                         MapStatsKeeper.nearestDropoffDistance(s.position, enemy, game, Optional.<DropoffPlan>empty())-1);
                 int friendDistance = 10;
+
+                // Find any friends of the ship we are chasing.
                 for(Position p : CommonFunctions.getNeighbourhood(game.map, s.position, 4)) {
                     if(p.equals(s.position)) continue;
                     if(CommonFunctions.hasEnemyShip(game, p)) {
@@ -32,16 +39,24 @@ public class Hunting {
                         break;
                     }
                 }
+
                 boolean canCatch = false;
                 for(int r=1; r<=maxRadius; r++) {
                     if(canCatch) break;
+                    // The cost of hunting this ship is 3r turns, plus the ship swap cost. Why 3? The collision ship's
+                    // time is built into the ship swap cost.
                     double cost = 3 * r * MiningFunctions.shipTurnValue() + shipSwapCost;
+                    // Not worth it - the cost exceeds the halite in the ship.
                     if(cost > s.halite) break;
                     if(friendDistance <= r) break;
                     Logger.info(String.format("Considering hunting %s at radius %d - cost %f", s, r, cost));
+
+                    // All the hunters must carry little enough that we are happy to collide with the ship.
                     double maxHunterHalite = s.halite - cost;
                     Map<Ship, Direction> hunterToCutoff = new HashMap<>();
                     canCatch = true;
+
+                    // Try to find a hunter in each direction, who can intercept them along that axis in r turns.
                     for(Direction d : Direction.ALL_CARDINALS) {
                         Position offset = s.position.directionalOffset(d, game.map, r);
                         Logger.info(String.format("Seeing if we can catch at %s", offset));
@@ -56,7 +71,7 @@ public class Hunting {
 
                             if(inRange && eligible && !hunterToCutoff.containsKey(interceptor) && interceptor.halite < leastHalite) {
                                 bestShip = interceptor;
-                                leastHalite= interceptor.halite;
+                                leastHalite = interceptor.halite;
                             }
                         }
                         if(bestShip != null) {
@@ -70,6 +85,8 @@ public class Hunting {
                         }
                     }
                     if(canCatch) {
+                        // We can catch the ship! Do so, by moving each of the four hunters towards the ship. Prioritise
+                        // blocking along their axis.
                         Logger.info(String.format("Can catch %s!", s));
                         for(Ship interceptor : hunterToCutoff.keySet()) {
                             if(!remainingShips.contains(interceptor)) {

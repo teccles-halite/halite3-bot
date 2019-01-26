@@ -18,18 +18,22 @@ public class Dropoffs {
 
     public static Optional<DropoffPlan> getDropoffPlan(
             Game game, Optional<DropoffPlan> currentPlan, Map<Integer, List<Double>> expectedHaliteTimes, int haliteForExceptionalDropoffs) {
+        // Decides whether we should build a dropoff, and if so where and when we expect it to be.
+
+        // No dropoff if too late in the game.
         if(game.turnNumber > Constants.MAX_TURNS * BotConstants.get().DROPOFF_TURNS()) return Optional.empty();
+        // No dropoff if not enough ships.
         if(game.me.ships.size() < shipsNeededForNextDropoff(game)) return Optional.empty();
 
         Optional<DropoffPlan> newPlan = currentPlan;
         if(newPlan.isPresent() && newPlan.get().complete) {
+            // Discard complete plans.
             newPlan = Optional.empty();
         }
 
-        // Consider building a dropoff.
+        // Consider building a dropoff. We replan the site if the plan isn't underway yet. "Underway" means that
+        // returning ships can go to the site, because we expect to have the halite in time to build it.
         if(!newPlan.isPresent() || !newPlan.get().underway) {
-            // No plan, or one we haven't started. We can get a new plan.
-
             // Our model is that we save halite*c ship turns (where c is a constant that doesn't actually end up appearing).
             // On the other hand, building a ship gives us b new ship turns. So we need halite > constant for a dropoff
             // to be better than a ship.
@@ -49,27 +53,37 @@ public class Dropoffs {
                         Position pos = c.position;
                         boolean enemyNearby = false;
 
+                        // No dropoff is there's an enemy adjacent to the square. They'll probably mine it.
                         for(Position nbr : CommonFunctions.getNeighbourhood(game.map, pos, 1)) {
                             if(CommonFunctions.hasEnemyShip(game, nbr))enemyNearby = true;
                         }
                         if (enemyNearby) continue;
+
+                        // No dropoff if we're too close to another dropoff.
                         int distance = MapStatsKeeper.nearestDropoffDistance(pos, game.me, game, Optional.<DropoffPlan>empty());
                         if (distance < BotConstants.get().MIN_DROPOFF_DISTANCE()) {
                             // Too close to another dropoff.
                             continue;
                         }
 
+                        // No dropoff if there is no friendly ship nearby.
                         if(bots.current_bot.utils.CommonFunctions.ourShipsNearby(
                                 game, pos, BotConstants.get().DROPOFF_SHIP_MAX_DISTANCE()).isEmpty()) continue;
 
+                        // Count the nearby halite, exponentially weighted.
                         double nearbyHalite = CommonFunctions.haliteNearby(
                                 game, c.position, BotConstants.get().DROPOFF_RADIUS(), BotConstants.get().DROPOFF_HALITE_DROPOFF());
+                        // Adjust for how much we control this region.
                         nearbyHalite *= control(game, c.position, BotConstants.get().DROPOFF_RADIUS());
+                        // Adjust for extra distance from nearby dropoffs.
                         nearbyHalite *= 1 + (distance - BotConstants.get().MIN_DROPOFF_DISTANCE()) * BotConstants.get().DROPOFF_EXTRA_DIST_BONUS();
+                        // Adjust for how much this dropoff costs.
                         double costNorm = (double)(Constants.DROPOFF_COST - c.halite) / Constants.DROPOFF_COST;
                         costNorm = costNorm <= 0.1 ? 0.1 : costNorm;
                         nearbyHalite /= costNorm;
                         if (nearbyHalite > bestHalite) {
+                            // Make this our new target. This next check doesn't seem to actually do anything, because
+                            // of the values of these constants.
                             Integer ourShips = CommonFunctions.ourShipsNearby(game, c.position, BotConstants.get().DROPOFF_RADIUS()).size();
                             if(ourShips > BotConstants.get().DROPOFF_MIN_NEARBY_SHIPS()){
                                 bestHalite = nearbyHalite;
@@ -87,21 +101,30 @@ public class Dropoffs {
         // If we have a plan, better try to build!
         if(newPlan.isPresent()) {
             Position dest = newPlan.get().destination;
+            // We need to redo some checks from the above, because if the plan is underway they haven't been done this
+            // turn.
+
+            // Don't build dropoffs on dropoffs.
             if(game.map.at(dest).hasStructure()) return Optional.empty();
             boolean enemyNearby = false;
 
+            // Cancel the plan, even if it is underway, if there's an enemy too close.
             for(Position nbr : CommonFunctions.getNeighbourhood(game.map, dest, 1)) {
                 if(CommonFunctions.hasEnemyShip(game, nbr))enemyNearby = true;
             }
             if(enemyNearby) return  Optional.empty();
 
+            // We assume ships looking to build dropoffs have a certain amount of halite, and calculate how much halite
+            // we need in the bank.
             Integer assumedShipHalite = (int)(BotConstants.get().ASSUMED_RETURNING_PROPORTION()*Constants.MAX_HALITE);
             Integer haliteNeeded = Constants.DROPOFF_COST - game.map.at(dest).halite - assumedShipHalite;
             newPlan.get().haliteNeeded = haliteNeeded;
+
+            // We use the expected halite times of returners to calculate how many turns it will take us to be ready
+            // to build the dropoff.
             double expectedHaliteAtTime = game.me.halite - haliteForExceptionalDropoffs;
             Integer maxTurnWithHalite = expectedHaliteTimes.isEmpty() ? 0 : Collections.max(expectedHaliteTimes.keySet());
             Optional<Integer> turnWhenReady = Optional.empty();
-
             for(int t=0; t<=maxTurnWithHalite; t++) {
                 if(expectedHaliteAtTime > haliteNeeded){
                     turnWhenReady = Optional.of(t);
@@ -111,8 +134,12 @@ public class Dropoffs {
                     expectedHaliteAtTime += expectedHaliteTimes.get(t).stream().mapToDouble(a->a).sum();
                 }
             }
+
+            // If we declare this dropoff plan underway, we could get a returner in this many turns. Would be better to
+            // check for returners only, probably.
             Integer whenNeeded = CommonFunctions.nearestFriendlyShip(game, dest);
 
+            // Check if we'll have enough halite to build when the returner might arrive.
             if(!turnWhenReady.isPresent()) {
                 Logger.info(String.format("Not enough halite for dropoff expected - save up %d", haliteNeeded));
                 newPlan.get().underway = false;

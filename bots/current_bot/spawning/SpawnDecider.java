@@ -19,6 +19,7 @@ public class SpawnDecider {
             MoveRegister moveRegister,
             List<Integer> haliteHistory, List<Integer> shipHistory, Optional<DropoffPlan> plan, int haliteForExceptionalDropoffs, boolean runningLocally) {
         turnsSinceLastEnemySpawn++;
+        // Check for new ships
         for(Player p : game.players) {
             if(p.equals(game.me)) continue;
             for(Ship s : p.ships.values()) {
@@ -41,13 +42,16 @@ public class SpawnDecider {
             Logger.info("Not spawning - shipyard occupied");
             return false;
         }
+
         Integer haliteNeeded = Constants.SHIP_COST + haliteForExceptionalDropoffs;
+
         if(plan.isPresent() && plan.get().haliteNeeded > 0) haliteNeeded += plan.get().haliteNeeded;
         if(game.me.halite < haliteNeeded) {
             Logger.info("Not spawning - not enough halite");
             return false;
         }
 
+        // Find the range of ship numbers our opponents have.
         Integer ourShips = game.me.ships.size();
         Integer minShips = game.players.stream().filter(
                 p -> !p.equals(game.me)).map(
@@ -59,11 +63,13 @@ public class SpawnDecider {
                 Comparator.<Integer>naturalOrder()).get();
         Logger.info(String.format("Our ships %d, min ships %d, max ships %d", ourShips, minShips,maxShips));
         boolean enemySpawning = turnsSinceLastEnemySpawn < BotConstants.get().ENEMY_SPAWN_TURNS();
+        // Catch up with the lowest opponent count if necessary.
         if(!runningLocally && ourShips * BotConstants.get().SHIP_DEFICIT_BUILD() <= minShips && enemySpawning){
             Logger.info("Spawning - need to catch up");
             spawnedLast = true;
             return true;
         }
+        // Stop if we get too far ahead.
         if(!runningLocally && maxShips + BotConstants.get().SHIP_ADVANTAGE_STOP() < ourShips) {
             Logger.info("Not spawning - too far ahead");
             spawnedLast = false;
@@ -81,6 +87,8 @@ public class SpawnDecider {
             }
             Double finalHalite = haliteHistory.get(0) * (1-BotConstants.get().TOTAL_HALITE_COLLECTION()) + haliteCarried*BotConstants.get().CARRIED_PROPORTION();
             Integer shipsAlive = shipHistory.get(shipHistory.size()-1);
+
+            // Calculate halite left per ship, adjusting it for how much inspiration we expect on this map size.
             shipValue = BotConstants.get().SPAWN_INSPIRATION_BONUS() * (haliteRemaining - finalHalite) / shipsAlive;
             Logger.info(String.format("Halite remaining per ship %f (%d-%f)/%d)",
                     shipValue,

@@ -168,7 +168,7 @@ class SquareScore {
         if(!scared && freeOfShips != other.freeOfShips) return freeOfShips;
         // Logger.debug(String.format("Comparing %s to %s", direction, other.direction));
 
-
+        // Scared means that it's the endgame, and we need to get a shift on.
         if(scared) {
             // If scared, we care about absolute distance most of all.
             if(unsafeDistance < other.unsafeDistance) return true;
@@ -176,15 +176,17 @@ class SquareScore {
 
             Integer thisSafety = safeDistance.orElse(1000);
             Integer otherSafety = other.safeDistance.orElse(1000);
-            // Logger.debug(String.format("Safeties %d to %d", thisSafety, otherSafety));
+            // Next we care about the safe distance, because safe routes are still better.
             if(thisSafety < otherSafety) return true;
             if(otherSafety < thisSafety) return false;
 
+            // Moving is better than not moving.
             if(isMove != other.isMove) return isMove;
 
             int thisSafetyHalite = safeHalite.orElse(10000);
             int otherSaftetyHalite = other.safeHalite.orElse(10000);
 
+            // Burn less where possible.
             if(thisSafetyHalite < otherSaftetyHalite) return true;
             if(otherSaftetyHalite < thisSafetyHalite) return false;
 
@@ -195,7 +197,6 @@ class SquareScore {
             // then low safety halite, the low halite.
             Integer thisSafety = safeDistance.orElse(1000);
             Integer otherSafety = other.safeDistance.orElse(1000);
-            // Logger.debug(String.format("Safeties %d to %d", thisSafety, otherSafety));
             if(thisSafety < otherSafety) return true;
             if(otherSafety < thisSafety) return false;
 
@@ -213,8 +214,8 @@ class SquareScore {
             return halite < other.halite;
         }
         else {
-            // When not queueing, the key thing is to move *somewhere*. Within that, safety, distance and low
-            // halite are again the priorities.
+            // When not queueing, the key thing is to move *somewhere*. Otherwise we tend to get stuck in the middle of
+            // enemies, too scared to move. Within that, safety, distance and low halite are again the priorities.
             if(isMove != other.isMove) return isMove;
 
             Integer thisSafety = safeDistance.orElse(1000);
@@ -254,7 +255,12 @@ public class Returning {
             Set<EntityId> rushingShipIds,
             Map<EntityId, Position> guardShips,
             Optional<DropoffPlan> plan) {
+        // Decide which ships need to return
+
+        // We record when we expect each ship to bring some halite home, for use in dropoff planning.
         Map<Integer, List<Double>> haliteAtTime = new HashMap<>();
+
+        // Make a map of all the routes home which avoid enemy ships.
         SafeRouteMap safeRouteMap = new SafeRouteMap(game, plan, 0, true);
 
         for (Ship ship : ships) {
@@ -278,17 +284,18 @@ public class Returning {
             }
 
             if(guardShips.containsKey(ship.id)) {
+                // Guard ships don't return home.
                 Logger.info(String.format("Ship %s is guarding", ship));
             }
             else if (rushing && !onDropoff) {
-                // Time to come home
+                // Time to come home - the game is nearly over. Should probably check for 0 halite here!
                 Logger.info(String.format("Ship %s rushing home.", ship));
                 returningShipsIds.add(ship.id);
                 rushingShipIds.add(ship.id);
             }
             else if (returningShipsIds.contains(ship.id)) {
+                // Returners continue returning, unless they have reached a dropoff.
                 Logger.info("Ship is currently returning.");
-
                 if(onDropoff) {
                     Logger.info(String.format("Ship %s has found dropoff", ship));
                     returningShipsIds.remove(ship.id);
@@ -299,10 +306,13 @@ public class Returning {
                 }
             }
             else if (ship.halite >= Constants.MAX_HALITE*BotConstants.get().HALITE_TO_ALWAYS_RETURN()) {
+                // Ships over a halite threshold return.
                 Logger.info("Full - return");
                 returningShipsIds.add(ship.id);
             }
             else if(MiningFunctions.turnUpdated == game.turnNumber) {
+                // If we've scored mining this turn, compare the gains we get from continuing to mine with the gains
+                // from coming home.
                 Double bestScore = arrayMin(MiningFunctions.miningScores.get(ship));
                 if (dropoffDistance > 0 && ship.halite > 0) {
                     Logger.info(String.format(
@@ -317,6 +327,7 @@ public class Returning {
             }
 
             if(returningShipsIds.contains(ship.id)) {
+                // Track the time we expect to get this halite.
                 int expectedReturnTime = (int)(dropoffDistance*BotConstants.get().RETURN_SPEED());
                 List<Double> haliteAtReturnTime = haliteAtTime.getOrDefault(expectedReturnTime, new ArrayList<>());
                 haliteAtReturnTime.add(ship.halite * BotConstants.get().ASSUMED_RETURNING_PROPORTION());
@@ -335,8 +346,11 @@ public class Returning {
                                          Set<EntityId> rushingShips,
                                          Optional<DropoffPlan> plan,
                                          int exceptionalHaliteNeeded) {
-        Logger.info("Looking at shipyard future");
+        // Get the moves for all returning ships.
+
+        // Make map for returning routes avoiding adjacency to enemies.
         SafeRouteMap safeRouteMap = new SafeRouteMap(game, plan, 0, true);
+        // Make map for returning routes avoiding squares with enemies.
         SafeRouteMap unsafeRouteMap = new SafeRouteMap(game, plan, 0, false);
 
         Logger.info(String.format("returning ships %s", returningShipIds));
@@ -349,14 +363,19 @@ public class Returning {
                 sortedReturningShips.add(ship);
             }
         }
+
+        // Sort returning ships by how close they are to a dropoff.
         sortedReturningShips.sort(new ReturnerComparator(game, game.me, safeRouteMap, plan));
         Logger.info(String.format("Getting moves for %d returning ships", sortedReturningShips.size()));
+
+        // Decide whether we are in endgame mode.
         boolean suicideOnDropoff = false;
         if(returningShipIds.size() > game.turnsRemaining() * BotConstants.get().UNSAFE_RUSH_FACTOR()) {
             Logger.warn("Suicide on dropoff if necessary!");
             suicideOnDropoff = true;
         }
 
+        // Get moves for each ship.
         for(Ship ship : sortedReturningShips) {
             getReturningMove(
                     game, ship, moveRegister, safeRouteMap, unsafeRouteMap, suicideOnDropoff, !rushingShips.isEmpty(), plan, exceptionalHaliteNeeded);
@@ -369,12 +388,12 @@ public class Returning {
         Logger.info(String.format("Get returner direction for %s", ship));
         Integer currentSquareHalite = game.map.at(ship.position).halite;
 
-
         Position dropoff = MapStatsKeeper.nearestDropoff(ship.position, game.me, game, plan);
         int dropoffDistance = MapStatsKeeper.nearestDropoffDistance(ship.position, game.me, game, plan);
         Logger.info(String.format("Distance %d from nearest dropoff.", dropoffDistance));
 
         if(dropoffDistance == 0) {
+            // On a dropoff.
             Logger.info(String.format("Ship %s is on dropoff, but marked returning.", ship));
             if(suicideOnDropoff) {
                 // Waiting for death
@@ -390,7 +409,7 @@ public class Returning {
                 throw new IllegalStateException(String.format("Ship %s is at safe distance 0, marked as returning, but this is not the dropoff plan.", ship));
             }
             else {
-                // Ship should create dropoff if possible!
+                // This is a planned dropoff! Ship should create dropoff if possible.
                 if(game.me.halite + ship.halite + game.map.at(ship.position).halite >= Constants.DROPOFF_COST + exceptionalHaliteNeeded) {
                     Logger.info(String.format("Ship %s making dropoff!", ship));
 
@@ -413,6 +432,7 @@ public class Returning {
 
         double turnValueAfterReturn = Constants.MAX_HALITE / MiningFunctions.dropoffMiningValue.getOrDefault(dropoff, 1000.0);
         if(gainByStaying * BotConstants.get().STAYING_RETURN_WEIGHT() > turnValueAfterReturn && !rushOn) {
+            // We stay and mine if the gain from doing so is greater than the value of a turn after we return.
             Logger.info(String.format("Stay gain %s greater than turn value %s",
                     gainByStaying, turnValueAfterReturn));
             Optional<Direction> direction = Navigation.navigateLowHaliteDefaultSafety(
@@ -428,6 +448,7 @@ public class Returning {
 
         if(suicideOnDropoff) {
             if(dropoffDistance == 1) {
+                // Allow self-collisions on dropoffs at the end.
                 Logger.info(String.format("Ship %s going in, whether or not dropoff is occupied.", ship));
                 Logger.info(String.format("Dropoff %s.", dropoff));
                 Direction d = game.map.getUnsafeMoves(ship.position, dropoff).get(0);
@@ -438,6 +459,8 @@ public class Returning {
             }
         }
 
+        // Normal returning case. Get all the options for the ship. Also, work out if they are queuing - that is, a
+        // square nearer to the dropoff is already claimed by another ship. This affects our returning strategy.
         int ourDistance = safeRouteMap.safeDistance(ship.position).orElse(1000);
         boolean queueing = false;
         ArrayList<SquareScore> options = new ArrayList<>();
@@ -465,6 +488,7 @@ public class Returning {
         Logger.info(String.format("Ship %s options: %s", ship, options));
         boolean scared = game.turnsRemaining() <= dropoffDistance + BotConstants.get().RETURN_SAFETY_MARGIN();
 
+        // Compare our options.
         Optional<SquareScore> bestOption = Optional.empty();
         for(SquareScore score : options) {
             if(!bestOption.isPresent()) {

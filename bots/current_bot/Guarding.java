@@ -10,7 +10,10 @@ import hlt.*;
 import java.util.Map;
 import java.util.Optional;
 
-
+/**
+ * Guard dropoffs in the endgame (mostly thanks to SiestaGuru). Guard ships stay near a dropoff, running at enemies who
+ * approach and otherwise just hanging out.
+ */
 public class Guarding {
     public static void getGuardingMoves(Game game, MoveRegister moveRegister, Map<EntityId, Position> guardShips) {
         for(EntityId id : guardShips.keySet()) {

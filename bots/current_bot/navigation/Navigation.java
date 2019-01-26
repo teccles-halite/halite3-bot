@@ -10,22 +10,6 @@ public class Navigation {
         return navigateLowHalite(game, ship, pos, occupiedPositions);
     }
 
-    public static Optional<Direction> navigateLongerAxisDefaultSafety(Game game, Ship ship, Position pos, Set<Position> occupiedPositions) {
-        return navigate(game, ship, pos, occupiedPositions, new LongerAxisTiebreaker(game, ship, pos));
-    }
-
-    public enum SafetyLevel {
-        ALLOW_ENEMY(0),
-        ALLOW_ADJACENT(1),
-        NO_ADJACENT(2);
-
-        public int level;
-
-        SafetyLevel(int i) {
-            level = i;
-        }
-    }
-
     public interface DirectionTiebreaker {
         Direction betterDirection(Game game, Ship ship, Direction d_1, Direction d_2);
     }
@@ -125,7 +109,7 @@ public class Navigation {
             DirectionTiebreaker tiebreaker) {
         Optional<Direction> bestDirection = Optional.empty();
         for(Direction d : Direction.ALL_CARDINALS){
-            // Try to find a direction which is valid to visit.
+            // Try to find a direction which is safe to visit.
             // Logger.debug(String.format("Trying direction %s", d));
             Position destination = ship.position.directionalOffset(d, game.map);
             if(occupiedPositions.contains(destination)) {
@@ -150,10 +134,8 @@ public class Navigation {
         for(Direction d : Direction.ALL_CARDINALS){
             // Try to find a direction which is unoccupied.
 
-            // Logger.debug(String.format("Trying direction %s", d));
             Position destination = ship.position.directionalOffset(d, game.map);
             if(occupiedPositions.contains(destination)) {
-                // Logger.debug("Already taken");
                 continue;
             }
 
@@ -175,10 +157,8 @@ public class Navigation {
             for (Direction d : Direction.ALL_CARDINALS) {
                 // Try to find a direction which we don't have a ship on.
 
-                // Logger.debug(String.format("Trying direction %s", d));
                 Position destination = ship.position.directionalOffset(d, game.map);
                 if (occupiedPositions.contains(destination)) {
-                    // Logger.debug("Already taken");
                     continue;
                 }
 

@@ -55,6 +55,7 @@ public class MiningScoresFromPosition {
     }
 
     public MiningScoresFromPosition invoke() throws Exception {
+        // Get the scores for all squares for this ship.
         scored = new boolean[game.map.height][game.map.width];
         int[][] turnsToReach = new int[game.map.height][game.map.width];
         int[][] haliteOnReaching = new int[game.map.height][game.map.width];
@@ -84,6 +85,7 @@ public class MiningScoresFromPosition {
             }
             Set<Position> plusOnePositionsToScore = new HashSet<>();
             for (Position pos : positionsToScore) {
+                // Run through the positions we can get to on a particular turn, finding the squares beyond them.
                 shipIterations++;
                 Integer posHalite = game.map.at(pos).halite;
                 int previousShipHalite = haliteOnReaching[pos.x][pos.y];
@@ -91,7 +93,10 @@ public class MiningScoresFromPosition {
                 int one_step_cost = posHalite / Constants.MOVE_COST_RATIO;
                 int nextTurns;
                 int nextHalite;
+
                 if (one_step_cost > previousShipHalite) {
+                    // We'll have to stay here for a turn. Following squares will take two more turns, and we'll have a
+                    // bit more halite.
                     int haliteAfterStay = previousShipHalite + CommonFunctions.mineAmount(ship, posHalite);
                     int haliteLeft = (int) posHalite - CommonFunctions.mineAmount(ship, posHalite);
                     nextHalite = haliteAfterStay - haliteLeft / Constants.MOVE_COST_RATIO;
@@ -100,6 +105,7 @@ public class MiningScoresFromPosition {
                     nextTurns = previousTurns + 1;
                     nextHalite = previousShipHalite - one_step_cost;
                 }
+
                 for (Position nbr : CommonFunctions.getNeighbourhood(game.map, pos, 1)) {
                     // Don't allow paths to use squares that aren't safe to visit.
                     boolean canVisit = MapStatsKeeper.canVisitFuture(game, nbr, ship.halite, previousTurns);
@@ -110,6 +116,7 @@ public class MiningScoresFromPosition {
                     int currentTurns = turnsToReach[nbr.x][nbr.y];
                     int currentHalite = haliteOnReaching[nbr.x][nbr.y];
 
+                    // Update the position if we can get there in fewer turns, or the same turns with more halite.
                     if (!scored[nbr.x][nbr.y] || nextTurns < currentTurns ||
                             (nextTurns == currentTurns && nextHalite > currentHalite)) {
                         scored[nbr.x][nbr.y] = true;
@@ -209,10 +216,12 @@ public class MiningScoresFromPosition {
 
             haliteOnSquare -= turnHaliteCollected;
             if (haliteInShip > ship.halite) {
+                // We've made a profit.
                 double gain = haliteInShip - ship.halite;
                 double rate = gain / turnsSoFar;
                 double collectionTurns = (Constants.MAX_HALITE - ship.halite) / rate;
                 collectionTurns += returnTurns;
+                // If its less than the previous best profit, we're past the peak and should break.
                 if (collectionTurns > bestScore) {
                     break;
                 }

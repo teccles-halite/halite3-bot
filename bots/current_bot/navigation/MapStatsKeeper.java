@@ -14,22 +14,41 @@ import java.util.stream.Collectors;
  * Calculates various stats which it's more efficient to calculate once each turn than on the fly.
  */
 public class MapStatsKeeper {
+    // What squares are inspired, for every player
     private static boolean[][][] inspiredMaps;
+
+    // The maximum halite a ship can have to safely go to each square, for each player
     private static double[][][] haliteThreshholdMap;
+
+    // A smoothed version of haliteThreshholdMap, for us only.
     private static double[][] futureThresholdMap;
+
+    // Smoothed amount of halite near each square.
     private static double[][] nearbyHaliteMap;
+
+    // Largest number in the nearbyHaliteMap, used for normalisation.
     private static double maxNearbyHalite;
 
+    // Distance to the nearest dropoff for every square and player.
     private static int[][][] nearestDropoffDistance;
+    // Location of the nearest dropoff for every square and player.
+    private static Position[][][] nearestDropoff;
+
+    // Distance to the nearest enemy for every square.
     private static int[][] nearestEnemyDistance;
 
-    private static Position[][][] nearestDropoff;
+    // Last turn these maps were updated.
     private static int turnSeen = -1;
+
+    // The set of positions some enemy ship is brave enough to go to.
     private static Set<Position> enemyHappyWithCollision;
 
+    // For every other player, how aggressive they are when moving to empty squares adjacent to enemies.
     private static double[] moveEmptyAggression;
+    // For every other player, how aggressive they are when moving to squares with enemies.
     private static double[] moveFullAggression;
 
+    // A load of trackers used to detect collisions and potential collisions.
     private static Map<EntityId, Integer> previousTurnHalites = new HashMap<>();
     private static Map<EntityId, Position> previousShipsToPositions = new HashMap<>();
     private static Map<Position, EntityId> previousPositionsToShips = new HashMap<>();
@@ -39,6 +58,7 @@ public class MapStatsKeeper {
     private static int[][] previousTurnHalite;
 
     private static boolean[][] getInspirationMap(Game game, PlayerId player) {
+        // Work out what is inspired.
         boolean[][] inspiration = new boolean[game.map.height][game.map.width];
         for(int x=0; x < game.map.height; x++) {
             for (int y = 0; y < game.map.height; y++) {
@@ -76,6 +96,7 @@ public class MapStatsKeeper {
 
         enemyHappyWithCollision = calculateEnemyCollisionMap(game);
 
+        // Update the maps for nearest dropoffs and their distances. No idea why this isn't its own function.
         nearestDropoff = new Position[game.players.size()][game.map.height][game.map.width];
         nearestDropoffDistance = new int[game.players.size()][game.map.height][game.map.width];
         for(Player player : game.players) {
@@ -105,6 +126,7 @@ public class MapStatsKeeper {
     }
 
     private static void updateNearbyHaliteMap(Game game) {
+        // Calculate the amount of nearby halite at every square. We count squares exponentially less with distance.
         nearbyHaliteMap = new double[game.map.height][game.map.width];
         maxNearbyHalite = 0;
         for(int x=0; x < game.map.height; x++) {
@@ -136,6 +158,7 @@ public class MapStatsKeeper {
     }
 
     private static void updateNearestEnemyDistance(Game game) {
+        // Finds the distance to the nearest enemy at every square, by searching outwards from enemy ships.
         nearestEnemyDistance = new int[game.map.height][game.map.width];
 
         Set<Position> found = new HashSet<>();
@@ -164,14 +187,17 @@ public class MapStatsKeeper {
     }
 
     private static void updateAggressionMaps(Game game) {
+        // Update how aggressive we think everyone is. This must be called early in the update process - it relies on
+        // the previous turn's collision threshold maps.
+
         if(game.turnNumber < 2) {
+            // Initialise the maps.
             previousTurnHalite = new int[game.map.height][game.map.width];
+
+            // We assume everyone is a wimp. We'll probably get a decent picture before too many collisions!
             moveEmptyAggression = new double[game.players.size()];
-            // We assume everyone is a wimp when it comes to moving. We'll probably get a decent picture before too
-            // many collisions!
             for(int i = 0; i<game.players.size(); i++) moveEmptyAggression[i] = -Constants.MAX_HALITE;
             moveFullAggression = new double[game.players.size()];
-            // We move this all the way to 0 when someone shows an appetite for colliding.
             for(int i = 0; i<game.players.size(); i++) moveFullAggression[i] = -Constants.MAX_HALITE;
         }
         for(int i = 0; i<game.players.size(); i++) {
@@ -190,25 +216,35 @@ public class MapStatsKeeper {
                 Ship ship = p.ships.get(shipId);
                 nextPreviousShips.add(shipId);
                 collisionShips.remove(shipId);
+                // Ignore surrounded ships, because they do crazy stuff.
                 if(previousTurnHalites.containsKey(shipId) && !surrounded.get(shipId)) {
                     int previousHalite = previousTurnHalites.get(shipId);
+
+                    // The maximum halite we judged as wise to make this move. If the square didn't have an enemy turtle
+                    // adjacent this will be 2000.
                     double threshold = haliteThreshholdMap[ship.owner.id][ship.position.x][ship.position.y];
                     // This is how much they exceeded a wise move by.
                     double aggression = previousHalite - threshold;
                     boolean wasMove = !ship.position.equals(previousShipsToPositions.get(shipId));
 
+                    // We only care about moves. We assume everyone is brave enough to stay still.
                     if(wasMove) {
                         EntityId previousShip = previousPositionsToShips.get(ship.position);
                         boolean hadEnemy = previousShip != null && !previousShipOwners.get(previousShip).equals(p.id);
                         if(hadEnemy) {
+                            // This was a move onto an enemy turtle.
                             if(aggression > moveFullAggression[p.id.id]) {
                                 Logger.info(String.format("Player %d has reached a new aggression %f for moves to enemies", p.id.id, aggression));
                                 Logger.info(String.format("Ship %s moving to %s, threshold %f, halite %d", ship.id, ship.position, threshold, previousTurnHalites.get(shipId)));
 
+                                // For moving onto enemy turtles, we are a bit conservative - after the first time a player
+                                // does this, we move their score all the way to 0. This prevents some strings of collisions
+                                // where a player gets gradually more aggressive.
                                 moveFullAggression[p.id.id] = aggression < 0 ? 0 : aggression;
                             }
                         }
                         else {
+                            // This was a move to an empty square.
                             if(aggression > moveEmptyAggression[p.id.id]) {
                                 Logger.info(String.format("Player %d has reached a new aggression %f for moves to empties", p.id.id, aggression));
                                 Logger.info(String.format("Ship %s moving to %s, threshold %f, halite %d", ship.id, ship.position, threshold, previousTurnHalites.get(shipId)));
@@ -225,6 +261,7 @@ public class MapStatsKeeper {
             }
         }
 
+        // We also have to update the aggressions for actual collisions. Detect as many of these as possible.
         for(EntityId id : collisionShips) {
             Logger.info(String.format("Investigating the death of ship %s", id));
             Position pos_1 = previousShipsToPositions.get(id);
@@ -268,8 +305,10 @@ public class MapStatsKeeper {
                     }
                 }
                 if(collisionSquare != null) {
+                    // We have found a collision, and know where it happened. We update the aggression maps as before.
                     for (EntityId shipId : new EntityId[]{id, culprit}) {
                         PlayerId p = previousShipOwners.get(shipId);
+                        // Ignore surrounded ships, because they do crazy stuff.
                         if(previousTurnHalites.containsKey(shipId) && !surrounded.get(shipId)) {
                             int previousHalite = previousTurnHalites.get(shipId);
                             double threshold = haliteThreshholdMap[p.id][collisionSquare.x][collisionSquare.y];
@@ -331,6 +370,7 @@ public class MapStatsKeeper {
     }
 
     private static Set<Position> calculateEnemyCollisionMap(Game game) {
+        // Calculates where the enemy would be happy to collide.
         Set<Position> collisions = new HashSet<>();
         for(Player p : game.players) {
             double[][] map = haliteThreshholdMap[p.id.id];
@@ -344,6 +384,8 @@ public class MapStatsKeeper {
                     if(!canMove && !nbr.equals(s.position)) continue;
                     boolean enemyPresent = CommonFunctions.hasEnemyShip(game, nbr, p);
                     double aggresion = enemyPresent ? moveFullAggression[p.id.id] : moveEmptyAggression[p.id.id];
+                    // The enemy will move if their halite is less the correct threshold, plus their (possibly negative)
+                    // aggression score, plus a safety margin.
                     if(s.halite <= map[nbr.x][nbr.y] + aggresion + BotConstants.get().AGGRESSION_SAFETY_MARGIN()) collisions.add(nbr);
                 }
             }
@@ -352,12 +394,14 @@ public class MapStatsKeeper {
     }
 
     private static double[][] playerHaliteThresholdMap(Game game, Player player) {
+        // For a single player, calculates the maxium halite for them to be happy with a collision on each square.
         double[][] haliteThreshholdMap = new double[game.map.width][game.map.height];
         for(int x=0; x < game.map.height; x++) {
             for (int y = 0; y < game.map.height; y++) {
                 Position pos = Position.getPosition(x, y);
                 Integer leastSurroundingHalite = null;
 
+                // Find the lowest halite enemy adjacent to the square.
                 for(Position p : CommonFunctions.getNeighbourhood(game.map, pos, 1)) {
                     if(p.equals(pos)) continue;
                     if(CommonFunctions.hasEnemyShip(game, p, player)) {
@@ -368,6 +412,8 @@ public class MapStatsKeeper {
                                 leastSurroundingHalite == null ? Constants.MAX_HALITE : leastSurroundingHalite);
                     }
                 }
+
+                // For stationary enemies, we count their mining this turn into their halite.
                 if(CommonFunctions.hasEnemyShip(game, pos, player)) {
                     Ship enemy = game.map.at(pos).ship;
                     boolean inspiration = getInspiration(game, pos, enemy.owner);
@@ -377,28 +423,36 @@ public class MapStatsKeeper {
                             leastSurroundingHalite == null ? Constants.MAX_HALITE : leastSurroundingHalite);
                 }
 
+                // We can always visit our own dropoffs. They get a threshold of 2000. 2000 is convenient for our
+                // aggression calculations, because it means that even if a 1000 ship moves to this square, the enemy
+                // aggression score stays at -1000.
                 if(game.map.at(pos).hasStructure() && game.map.at(pos).structure.owner.equals(player.id)) {
-                    // Our dropoff - can always visit
                     haliteThreshholdMap[pos.x][pos.y] = 2*Constants.MAX_HALITE + 0.5;
                 }
                 else if(leastSurroundingHalite != null) {
                     if(game.map.at(pos).hasStructure() && !game.map.at(pos).structure.owner.equals(player.id)) {
-                        // Enemy dropoff with adjacent ship
+                        // Enemy dropoff with adjacent ship - these are never safe to visit.
                         haliteThreshholdMap[pos.x][pos.y] = -1;
                     }
                     else {
+                        // Calculate the control of this square, and therefore the threshold for visiting.
                         double territory = getTerritory(game, pos, player);
                         double threshhold = haliteThreshhold(game, territory, leastSurroundingHalite);
                         haliteThreshholdMap[pos.x][pos.y] = threshhold;
                     }
                 }
-                else haliteThreshholdMap[pos.x][pos.y] = 2*Constants.MAX_HALITE + 0.5;
+                else {
+                    // No adjacent ships - threshold of 2000.
+                    haliteThreshholdMap[pos.x][pos.y] = 2*Constants.MAX_HALITE + 0.5;
+                }
             }
         }
         return haliteThreshholdMap;
     }
 
     private static double getTerritory(Game game, Position pos, Player player) {
+        // Control of a square. Roughly the proportion of nearby ships and structures that is owned by the player, with
+        // nearer ones counted exponentially more.
         double enemies = BotConstants.get().BASE_TERRITORY_WEIGHT();
         double friends = BotConstants.get().BASE_TERRITORY_WEIGHT();
         boolean foundFriend = false;
@@ -439,11 +493,15 @@ public class MapStatsKeeper {
 
     public static boolean happyWithCollision(Game game, Player player, Position pos, Integer halite, boolean isStationary) {
         if(game.turnNumber > turnSeen) updateMaps(game);
+        // The player is happy to collide if the ship's halite is less than the threshold for this square. We add in a
+        // small bonus for staying still.
         int bonus = isStationary ? BotConstants.get().STATIONARY_THRESHOLD_BONUS() : 0;
         return halite - bonus <= haliteThreshholdMap[player.id.id][pos.x][pos.y];
     }
 
     public static boolean happyWithCollisionFuture(Game game, Position pos, int halite, int turnsInFuture) {
+        // Interpolates between the collision threshold now for the square, and a smoothed version, depending on how far
+        // in the future we are looking.
         if(game.turnNumber > turnSeen) updateMaps(game);
         double futureProp = ((double)turnsInFuture) / BotConstants.get().TURNS_TO_FUTURE_PLAN();
         futureProp = futureProp > 1 ? 1.0 : futureProp;
@@ -454,6 +512,8 @@ public class MapStatsKeeper {
     }
 
     private static double thresholdFuture(Game game, Player player, int x, int y) {
+        // The collision threshold for a square in the far future. This is a weighted average of the nearby thresholds
+        // now, clipped to [0, 1000], with nearby thresholds counting more.
         double totalThreshold = 0;
         double totalWeight = 0;
         Position pos = Position.getPosition(x, y);
@@ -517,23 +577,17 @@ public class MapStatsKeeper {
         return bestDistance;
     }
 
-    public static int nearestDropoffDistance(int x, int y, Player player, Game game, Optional<DropoffPlan> plan) {
-        if(game.turnNumber > turnSeen) updateMaps(game);
-        int id = player.id.id;
-        int bestDistance = nearestDropoffDistance[id][x][y];
-        if(plan.isPresent()) {
-            int fakeDist = game.map.calculateDistance(x, y, plan.get().destination);
-            return fakeDist < bestDistance ? fakeDist : bestDistance;
-        }
-        return bestDistance;
-    }
-
     private static double haliteThreshhold(Game game, double territory, double effectiveEnemyHalite) {
         double t = territory;
         double e = effectiveEnemyHalite;
+        // In normal operation p is the number of enemy players. We can also override it to produce more aggressive
+        // versions for testing.
         double p = BotConstants.get().AGGRO_PLAYERS() == 0 ? game.players.size() - 1 : BotConstants.get().AGGRO_PLAYERS();
         double s = SpawnDecider.shipValue;
 
+        // This is the halite carred that makes
+        // OUR_VALUE_AFTER_COLLISION - OUR_VALUE_BEFORE_COLLISION - (ENEMY_VALUE_AFTER_COLLISION - ENEMY_VALUE_BEFORE_COLLISION)/ p
+        // equal 0.
         double thresh = (e*t*(p + 1) - s*(p-1)) / ((1-t) * (1+p));
         return thresh >= 0 ? thresh : -1;
 

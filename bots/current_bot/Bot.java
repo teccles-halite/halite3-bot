@@ -68,7 +68,7 @@ public class Bot extends BaseBot {
         Set<EntityId> forcedStayIds = CommonFunctions.getForcedStills(map, moveRegister);
         Logger.logtime("Calculated forced stay moves");
 
-        // From here, ships on dropoffs will move off if all the squares around them are filled.
+        // From here, scared ships will take their last legal move.
         moveRegister.startTrackingLegalMoves();
 
         // Find new ships to return, and get the times we expect to have halite at for dropoff planning.
@@ -102,7 +102,6 @@ public class Bot extends BaseBot {
         // Get moves for ships returning to dropoffs.
         Returning.getReturningMoves(
                 game, moveRegister, returningShipIds, rushingShipIds, dropoffPlan, haliteForExceptionalDropoffs);
-
 
         // Decide if we should spawn.
         boolean shouldSpawn = SpawnDecider.shouldSpawn(game, moveRegister, halite_per_turn, ships_per_turn, dropoffPlan, haliteForExceptionalDropoffs, runningLocally);
